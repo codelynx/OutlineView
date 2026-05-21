@@ -8,6 +8,16 @@ private struct Node: Identifiable {
 	var children: [Node]?
 }
 
+private struct PlainID: Hashable, Sendable {
+	let rawValue: Int
+}
+
+private struct PlainNode: Identifiable {
+	let id: PlainID
+	let title: String
+	var children: [PlainNode]?
+}
+
 private let sampleTree: [Node] = [
 	Node(id: 1, title: "Root", children: [
 		Node(id: 2, title: "Child A", children: nil),
@@ -20,6 +30,22 @@ private let sampleTree: [Node] = [
 @Test @MainActor func buildsWithHierarchicalData() async throws {
 	_ = OutlineView(
 		sampleTree,
+		children: \.children,
+		selection: .constant([]),
+		expanded: .constant([])
+	) { node in
+		Text(node.title)
+	}
+}
+
+@Test @MainActor func buildsWithNonCodableIDsWhenDragIsDisabled() async throws {
+	let tree = [
+		PlainNode(id: PlainID(rawValue: 1), title: "Root", children: [
+			PlainNode(id: PlainID(rawValue: 2), title: "Leaf", children: nil),
+		]),
+	]
+	_ = OutlineView(
+		tree,
 		children: \.children,
 		selection: .constant([]),
 		expanded: .constant([])
@@ -144,4 +170,41 @@ private let sampleTree: [Node] = [
 	let b = OutlineDrop(sourceID: 1, targetID: 2, position: DropPosition.on)
 	#expect(a == b)
 	#expect(Set([a, b]).count == 1)
+}
+
+@Test @MainActor func buildsWithOnMoveClosureAndNonCodableIDs() async throws {
+	let tree = [
+		PlainNode(id: PlainID(rawValue: 1), title: "Root", children: []),
+	]
+	_ = OutlineView(
+		tree,
+		children: \.children,
+		selection: .constant([]),
+		expanded: .constant([]),
+		onMove: { move in
+			_ = move.sourceID
+			_ = move.destination
+			return true
+		}
+	) { node in
+		Text(node.title)
+	}
+}
+
+@Test func outlineMoveSupportsRootDestination() {
+	let move = OutlineMove(sourceID: 1, destination: OutlineMoveDestination<Int>.root)
+
+	#expect(move.sourceID == 1)
+	#expect(move.destination == .root)
+	#expect(OutlineDrop(move) == nil)
+}
+
+@Test func outlineMoveCanAdaptToLegacyOutlineDrop() throws {
+	let before = OutlineMove(sourceID: 1, destination: OutlineMoveDestination.before(2))
+	let inside = OutlineMove(sourceID: 1, destination: OutlineMoveDestination.inside(2))
+	let after = OutlineMove(sourceID: 1, destination: OutlineMoveDestination.after(2))
+
+	#expect(try #require(OutlineDrop(before)).position == .before)
+	#expect(try #require(OutlineDrop(inside)).position == .on)
+	#expect(try #require(OutlineDrop(after)).position == .after)
 }

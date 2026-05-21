@@ -5,6 +5,6 @@
       location = "group:Package.swift">
    </FileRef>
    <FileRef
-      location = "group:Examples/FileBrowser/FileBrowser.xcodeproj">
+      location = "group:Examples/MemoTree/MemoTree.xcodeproj">
    </FileRef>
 </Workspace>
