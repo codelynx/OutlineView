@@ -1,0 +1,33 @@
+name: FileBrowser
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "13.0"
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  OutlineView:
+    path: ../..
+
+targets:
+  FileBrowser:
+    type: application
+    supportedDestinations: [macOS, iOS]
+    sources:
+      - path: FileBrowser
+    dependencies:
+      - package: OutlineView
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.FileBrowser
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
