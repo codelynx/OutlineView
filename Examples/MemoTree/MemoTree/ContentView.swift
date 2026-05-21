@@ -58,13 +58,13 @@ struct ContentView: View {
 	private var treeArea: some View {
 		OutlineView(
 			items,
-			children: \.children,
-			selection: $selection,
-			expanded: $expanded,
-			onDrop: handleDrop
-		) { item in
-			rowLabel(for: item)
-		}
+				children: \.children,
+				selection: $selection,
+				expanded: $expanded,
+				onMove: handleMove
+			) { item in
+				rowLabel(for: item)
+			}
 	}
 
 	private func rowLabel(for item: Item) -> some View {
@@ -122,32 +122,35 @@ struct ContentView: View {
 		selection = [newItem.id]
 	}
 
-	private func handleDrop(_ drop: OutlineDrop<UUID>) -> Bool {
+	private func handleMove(_ move: OutlineMove<UUID>) -> Bool {
 		// Snapshot names before mutation so the log line is useful even after
 		// the source moves.
-		let sourceName = findItem(drop.sourceID, in: items)?.displayName ?? drop.sourceID.shortDescription
-		let targetName = findItem(drop.targetID, in: items)?.displayName ?? drop.targetID.shortDescription
+		let sourceName = findItem(move.sourceID, in: items)?.displayName ?? move.sourceID.shortDescription
+		let targetName = move.destination.targetID
+			.flatMap { findItem($0, in: items)?.displayName ?? $0.shortDescription }
+			?? "root"
 
-		guard drop.sourceID != drop.targetID else {
-			logDrop(drop, sourceName: sourceName, targetName: targetName, accepted: false, note: "self-drop")
+		if move.destination.targetID == move.sourceID {
+			logMove(move, sourceName: sourceName, targetName: targetName, accepted: false, note: "self-drop")
 			return false
 		}
 
 		// Refuse drop onto own subtree — would orphan the moved item.
-		if let sourceItem = findItem(drop.sourceID, in: items),
-		   subtree([sourceItem], contains: drop.targetID) {
-			logDrop(drop, sourceName: sourceName, targetName: targetName, accepted: false, note: "would land in own subtree")
+		if let targetID = move.destination.targetID,
+		   let sourceItem = findItem(move.sourceID, in: items),
+		   subtree([sourceItem], contains: targetID) {
+			logMove(move, sourceName: sourceName, targetName: targetName, accepted: false, note: "would land in own subtree")
 			return false
 		}
 
-		guard let moved = removeItem(drop.sourceID, from: &items) else { return false }
-		let inserted = insertItem(moved, relativeTo: drop.targetID, position: drop.position, in: &items)
+		guard let moved = removeItem(move.sourceID, from: &items) else { return false }
+		let inserted = insertItem(moved, at: move.destination, in: &items)
 		if !inserted {
 			// Insertion target vanished mid-flight (shouldn't happen here,
 			// but be safe): restore at root tail so we don't lose the item.
 			items.append(moved)
 		}
-		logDrop(drop, sourceName: sourceName, targetName: targetName, accepted: inserted)
+		logMove(move, sourceName: sourceName, targetName: targetName, accepted: inserted)
 		return inserted
 	}
 
@@ -163,18 +166,19 @@ struct ContentView: View {
 
 	// MARK: - Logging
 
-	private func logDrop(
-		_ drop: OutlineDrop<UUID>,
+	private func logMove(
+		_ move: OutlineMove<UUID>,
 		sourceName: String,
 		targetName: String,
 		accepted: Bool,
 		note: String? = nil
 	) {
 		let verb: String
-		switch drop.position {
-		case .before: verb = "BEFORE"
-		case .on:     verb = "ON"
-		case .after:  verb = "AFTER"
+		switch move.destination {
+		case .root:    verb = "ROOT"
+		case .before:  verb = "BEFORE"
+		case .inside:  verb = "INSIDE"
+		case .after:   verb = "AFTER"
 		}
 		let status = accepted ? "✓" : "✗"
 		var line = "\(status) \(sourceName) → \(verb) \(targetName)"

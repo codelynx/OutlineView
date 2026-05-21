@@ -114,6 +114,27 @@ func insertItem(
 	return false
 }
 
+/// Insert `newItem` at an OutlineView move destination. Root drops append to
+/// the root list; row-relative drops reuse the older before/inside/after helper.
+@discardableResult
+func insertItem(
+	_ newItem: Item,
+	at destination: OutlineMoveDestination<UUID>,
+	in items: inout [Item]
+) -> Bool {
+	switch destination {
+	case .root:
+		items.append(newItem)
+		return true
+	case let .before(target):
+		return insertItem(newItem, relativeTo: target, position: .before, in: &items)
+	case let .inside(target):
+		return insertItem(newItem, relativeTo: target, position: .on, in: &items)
+	case let .after(target):
+		return insertItem(newItem, relativeTo: target, position: .after, in: &items)
+	}
+}
+
 /// Locate the item with the given id; returns nil if not found.
 func findItem(_ id: UUID, in items: [Item]) -> Item? {
 	for item in items {
