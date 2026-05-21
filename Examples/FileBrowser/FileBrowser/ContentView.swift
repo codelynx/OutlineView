@@ -8,12 +8,17 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var selection: Set<URL> = []
     @State private var expanded: Set<URL> = []
+    @State private var dropLog: [String] = []
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             content
+            if root != nil {
+                Divider()
+                dropLogFooter
+            }
         }
         .fileImporter(
             isPresented: $showImporter,
@@ -50,7 +55,15 @@ struct ContentView: View {
                 [root],
                 children: \.children,
                 selection: $selection,
-                expanded: $expanded
+                expanded: $expanded,
+                onDrop: { drop in
+                    logDrop(drop)
+                    // Read-only browser: don't actually move files. Returning
+                    // true lets us see the gesture path resolve end-to-end
+                    // (the row clears its targeted highlight, etc.) even
+                    // though no mutation happens.
+                    return true
+                }
             ) { node in
                 Label(node.name, systemImage: node.isDirectory ? "folder" : "doc")
             }
@@ -65,6 +78,29 @@ struct ContentView: View {
         }
     }
 
+    private var dropLogFooter: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Drop log (most recent first)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if dropLog.isEmpty {
+                Text("Drag a row onto another row to see the resolved position.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(dropLog.prefix(4), id: \.self) { line in
+                    Text(line)
+                        .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.secondary.opacity(0.08))
+    }
+
     private func setRoot(_ url: URL) {
         scopedRoot?.stopAccessingSecurityScopedResource()
         scopedRoot = url.startAccessingSecurityScopedResource() ? url : nil
@@ -72,6 +108,19 @@ struct ContentView: View {
         root = node
         selection = []
         expanded = [node.id]
+        dropLog = []
+    }
+
+    private func logDrop(_ drop: OutlineDrop<URL>) {
+        let verb: String
+        switch drop.position {
+        case .before: verb = "BEFORE"
+        case .on:     verb = "ON"
+        case .after:  verb = "AFTER"
+        }
+        let line = "\(drop.sourceID.lastPathComponent) → \(verb) \(drop.targetID.lastPathComponent)"
+        dropLog.insert(line, at: 0)
+        if dropLog.count > 10 { dropLog.removeLast(dropLog.count - 10) }
     }
 }
 

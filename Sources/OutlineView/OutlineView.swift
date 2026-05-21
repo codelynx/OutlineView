@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A SwiftUI outline view for hierarchical data, working on macOS and iOS.
 ///
@@ -8,31 +9,44 @@ import SwiftUI
 /// programmatic expand/collapse all want behaviors that `List` + `.onMove`
 /// constrains.
 ///
-/// Slice 1 scope: selection (single-tap-to-replace) + programmatic expand.
-/// Drag/drop and multi-select gestures (cmd-click / shift-click) land later.
+/// Slices landed:
+/// - **Slice 1** — selection (single-tap-to-replace) + programmatic expand.
+/// - **Slice 2** — per-row drag source + per-row drop target with
+///   above / on / below zones. Caller's `onDrop` callback decides accept.
+///
+/// Still to come: multi-select gestures (cmd-click / shift-click).
 public struct OutlineView<Data, ID, RowContent>: View
 where Data: RandomAccessCollection,
 	  Data.Element: Identifiable,
 	  ID == Data.Element.ID,
+	  ID: Codable & Sendable,
 	  RowContent: View
 {
 	private let data: Data
 	private let children: KeyPath<Data.Element, Data?>
 	@Binding private var selection: Set<ID>
 	@Binding private var expanded: Set<ID>
+	private let onDrop: ((OutlineDrop<ID>) -> Bool)?
 	private let rowContent: (Data.Element) -> RowContent
+
+	@State private var targetedRowID: ID? = nil
+
+	static var rowHeight: CGFloat { 28 }
+	static var indentPerDepth: CGFloat { 16 }
 
 	public init(
 		_ data: Data,
 		children: KeyPath<Data.Element, Data?>,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
+		onDrop: ((OutlineDrop<ID>) -> Bool)? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) {
 		self.data = data
 		self.children = children
 		self._selection = selection
 		self._expanded = expanded
+		self.onDrop = onDrop
 		self.rowContent = rowContent
 	}
 
@@ -53,19 +67,48 @@ where Data: RandomAccessCollection,
 	@ViewBuilder
 	private func rowView(for row: FlatRow<Data.Element>) -> some View {
 		let isSelected = selection.contains(row.element.id)
-		HStack(spacing: 4) {
-			Color.clear.frame(width: CGFloat(row.depth) * 16, height: 1)
-			disclosureControl(for: row)
-				.frame(width: 16, height: 16)
+		let isTargeted = targetedRowID == row.element.id
+		let base = HStack(spacing: 4) {
+			Color.clear.frame(width: CGFloat(row.depth) * Self.indentPerDepth, height: 1)
+			disclosureControl(for: row).frame(width: 16, height: 16)
 			rowContent(row.element)
 			Spacer(minLength: 0)
 		}
-		.padding(.vertical, 4)
 		.padding(.horizontal, 8)
-		.background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+		.frame(height: Self.rowHeight)
+		.background(
+			isSelected ? Color.accentColor.opacity(0.2) :
+				isTargeted ? Color.accentColor.opacity(0.1) : Color.clear
+		)
 		.contentShape(Rectangle())
 		.onTapGesture {
 			selection = [row.element.id]
+		}
+
+		if let onDrop {
+			base
+				.draggable(OutlineDragItem(id: row.element.id))
+				.dropDestination(for: OutlineDragItem<ID>.self) { items, location in
+					guard let item = items.first else { return false }
+					let position = resolveDropPosition(
+						localY: location.y,
+						rowHeight: Self.rowHeight,
+						hasChildren: row.hasChildren
+					)
+					return onDrop(OutlineDrop(
+						sourceID: item.id,
+						targetID: row.element.id,
+						position: position
+					))
+				} isTargeted: { targeted in
+					if targeted {
+						targetedRowID = row.element.id
+					} else if targetedRowID == row.element.id {
+						targetedRowID = nil
+					}
+				}
+		} else {
+			base
 		}
 	}
 
@@ -93,6 +136,34 @@ where Data: RandomAccessCollection,
 		}
 	}
 }
+
+// MARK: - Public drop types
+
+/// Where in a row's bounds the drag landed.
+///
+/// `.on` means the drop should land *inside* the target row (treating it as
+/// a container — reparent the source under it). `.before` and `.after` mean
+/// the drop should land between rows (reorder among the target's siblings).
+public enum DropPosition: Sendable, Hashable {
+	case before
+	case on
+	case after
+}
+
+/// Payload delivered to the caller's `onDrop` closure.
+public struct OutlineDrop<ID: Hashable & Sendable>: Sendable, Hashable {
+	public let sourceID: ID
+	public let targetID: ID
+	public let position: DropPosition
+
+	public init(sourceID: ID, targetID: ID, position: DropPosition) {
+		self.sourceID = sourceID
+		self.targetID = targetID
+		self.position = position
+	}
+}
+
+// MARK: - Internal helpers (visible to tests)
 
 /// One visible row in the flattened tree.
 ///
@@ -130,4 +201,32 @@ where Data: RandomAccessCollection,
 		}
 	}
 	return out
+}
+
+/// Resolve which of `.before` / `.on` / `.after` a drop at `localY` falls in.
+///
+/// Branch rows (`hasChildren == true`) use a 25% / 50% / 25% split. Leaf rows
+/// have no `.on` zone (no container to drop *into*) and use a 50% / 50% split
+/// between `.before` and `.after`.
+func resolveDropPosition(localY: CGFloat, rowHeight: CGFloat, hasChildren: Bool) -> DropPosition {
+	guard rowHeight > 0 else { return .on }
+	let fraction = max(0, min(1, localY / rowHeight))
+	if hasChildren {
+		if fraction < 0.25 { return .before }
+		if fraction > 0.75 { return .after }
+		return .on
+	} else {
+		return fraction < 0.5 ? .before : .after
+	}
+}
+
+/// Drag payload — wraps the row's ID so SwiftUI can deliver it to the drop
+/// destination's `onDrop` callback. Private to the package; callers never
+/// construct it directly.
+struct OutlineDragItem<ID: Codable & Hashable & Sendable>: Codable, Hashable, Transferable {
+	let id: ID
+
+	static var transferRepresentation: some TransferRepresentation {
+		CodableRepresentation(contentType: .data)
+	}
 }

@@ -76,3 +76,67 @@ private let sampleTree: [Node] = [
 
 	#expect(rows.map(\.element.id) == [1])
 }
+
+// MARK: - Drop zone resolution
+
+@Test func branchRowSplitsBeforeOnAfterAtQuarters() {
+	let h: CGFloat = 28
+	#expect(resolveDropPosition(localY: 0,         rowHeight: h, hasChildren: true) == .before)
+	#expect(resolveDropPosition(localY: h * 0.20,  rowHeight: h, hasChildren: true) == .before)
+	#expect(resolveDropPosition(localY: h * 0.30,  rowHeight: h, hasChildren: true) == .on)
+	#expect(resolveDropPosition(localY: h * 0.50,  rowHeight: h, hasChildren: true) == .on)
+	#expect(resolveDropPosition(localY: h * 0.70,  rowHeight: h, hasChildren: true) == .on)
+	#expect(resolveDropPosition(localY: h * 0.80,  rowHeight: h, hasChildren: true) == .after)
+	#expect(resolveDropPosition(localY: h,         rowHeight: h, hasChildren: true) == .after)
+}
+
+@Test func leafRowHasNoOnZoneAndSplitsAtHalf() {
+	let h: CGFloat = 28
+	#expect(resolveDropPosition(localY: 0,         rowHeight: h, hasChildren: false) == .before)
+	#expect(resolveDropPosition(localY: h * 0.49,  rowHeight: h, hasChildren: false) == .before)
+	#expect(resolveDropPosition(localY: h * 0.51,  rowHeight: h, hasChildren: false) == .after)
+	#expect(resolveDropPosition(localY: h,         rowHeight: h, hasChildren: false) == .after)
+}
+
+@Test func dropPositionClampsLocalYToRowBounds() {
+	let h: CGFloat = 28
+	// Negative or out-of-bounds localY values should clamp into the
+	// nearest zone rather than crash or read uninitialized.
+	#expect(resolveDropPosition(localY: -10,       rowHeight: h, hasChildren: true)  == .before)
+	#expect(resolveDropPosition(localY: h + 100,   rowHeight: h, hasChildren: true)  == .after)
+	#expect(resolveDropPosition(localY: -10,       rowHeight: h, hasChildren: false) == .before)
+	#expect(resolveDropPosition(localY: h + 100,   rowHeight: h, hasChildren: false) == .after)
+}
+
+@Test func zeroOrNegativeRowHeightDegradesGracefully() {
+	#expect(resolveDropPosition(localY: 10, rowHeight: 0,  hasChildren: true)  == .on)
+	#expect(resolveDropPosition(localY: 10, rowHeight: -5, hasChildren: false) == .on)
+}
+
+// MARK: - DnD-enabled OutlineView builds
+
+@Test @MainActor func buildsWithOnDropClosure() async throws {
+	_ = OutlineView(
+		sampleTree,
+		children: \.children,
+		selection: .constant([]),
+		expanded: .constant([]),
+		onDrop: { drop in
+			// Closure runs at drop time, not build time — just confirming
+			// the OutlineView accepts the signature.
+			_ = drop.sourceID
+			_ = drop.targetID
+			_ = drop.position
+			return true
+		}
+	) { node in
+		Text(node.title)
+	}
+}
+
+@Test func outlineDropIsValueAndHashable() {
+	let a = OutlineDrop(sourceID: 1, targetID: 2, position: DropPosition.on)
+	let b = OutlineDrop(sourceID: 1, targetID: 2, position: DropPosition.on)
+	#expect(a == b)
+	#expect(Set([a, b]).count == 1)
+}
