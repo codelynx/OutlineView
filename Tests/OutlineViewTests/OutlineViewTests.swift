@@ -33,7 +33,7 @@ private let sampleTree: [Node] = [
 
 	#expect(rows.map(\.element.id) == [1])
 	#expect(rows[0].depth == 0)
-	#expect(rows[0].hasChildren == true)
+	#expect(rows[0].isBranch == true)
 }
 
 @Test func expandedRootIncludesChildrenButNotGrandchildren() {
@@ -50,25 +50,38 @@ private let sampleTree: [Node] = [
 	#expect(rows.map(\.depth) == [0, 1, 1, 2])
 }
 
-@Test func hasChildrenDistinguishesLeavesFromBranches() {
+@Test func isBranchDistinguishesContainersFromLeaves() {
 	let rows = flattenTree(sampleTree, children: \.children, expanded: Set([1, 3]))
-	let hasKids = Dictionary(uniqueKeysWithValues: rows.map { ($0.element.id, $0.hasChildren) })
+	let isBranch = Dictionary(uniqueKeysWithValues: rows.map { ($0.element.id, $0.isBranch) })
 
-	#expect(hasKids[1] == true)
-	#expect(hasKids[2] == false)
-	#expect(hasKids[3] == true)
-	#expect(hasKids[4] == false)
+	// id 1 has children [Child A, Child B] → container
+	// id 2 has nil children → leaf
+	// id 3 has children [Leaf] → container
+	// id 4 has nil children → leaf
+	#expect(isBranch[1] == true)
+	#expect(isBranch[2] == false)
+	#expect(isBranch[3] == true)
+	#expect(isBranch[4] == false)
 }
 
-@Test func emptyChildrenArrayCountsAsLeaf() {
-	let withEmptyArray: [Node] = [
-		Node(id: 10, title: "Group", children: []),
-		Node(id: 11, title: "Nil", children: nil),
+@Test func emptyChildrenArrayStillCountsAsBranch() {
+	// Regression test for the predicate bug: `kids?.isEmpty == false` would
+	// classify an empty container as a leaf, removing its `.on` drop zone
+	// and re-introducing the exact empty-group-is-unreachable trap that
+	// motivated leaving `List(_:children:)`. The correct predicate is
+	// `kids != nil` — the container exists, it's just empty.
+	let mixed: [Node] = [
+		Node(id: 10, title: "EmptyGroup", children: []),
+		Node(id: 11, title: "FileLeaf",   children: nil),
 	]
-	let rows = flattenTree(withEmptyArray, children: \.children, expanded: Set([10]))
+	let rows = flattenTree(mixed, children: \.children, expanded: Set([10]))
 
+	// Empty expanded group emits no child rows under it.
 	#expect(rows.map(\.element.id) == [10, 11])
-	#expect(rows.allSatisfy { !$0.hasChildren })
+
+	let isBranch = Dictionary(uniqueKeysWithValues: rows.map { ($0.element.id, $0.isBranch) })
+	#expect(isBranch[10] == true,  "empty container must remain a branch — a valid .on drop target")
+	#expect(isBranch[11] == false, "nil children = leaf, no children container at all")
 }
 
 @Test func expandingALeafIsHarmless() {
@@ -77,40 +90,32 @@ private let sampleTree: [Node] = [
 	#expect(rows.map(\.element.id) == [1])
 }
 
-// MARK: - Drop zone resolution
+// MARK: - Drop zone math
 
-@Test func branchRowSplitsBeforeOnAfterAtQuarters() {
-	let h: CGFloat = 28
-	#expect(resolveDropPosition(localY: 0,         rowHeight: h, hasChildren: true) == .before)
-	#expect(resolveDropPosition(localY: h * 0.20,  rowHeight: h, hasChildren: true) == .before)
-	#expect(resolveDropPosition(localY: h * 0.30,  rowHeight: h, hasChildren: true) == .on)
-	#expect(resolveDropPosition(localY: h * 0.50,  rowHeight: h, hasChildren: true) == .on)
-	#expect(resolveDropPosition(localY: h * 0.70,  rowHeight: h, hasChildren: true) == .on)
-	#expect(resolveDropPosition(localY: h * 0.80,  rowHeight: h, hasChildren: true) == .after)
-	#expect(resolveDropPosition(localY: h,         rowHeight: h, hasChildren: true) == .after)
+@Test func branchZonesSplitAtQuarters() {
+	let f = dropZoneFractions(isBranch: true)
+	#expect(f.before == 0.25)
+	#expect(f.on == 0.5)
+	#expect(f.after == 0.25)
+	// The three zones must tile the row exactly — no gaps, no overlap.
+	#expect(f.before + (f.on ?? 0) + f.after == 1.0)
 }
 
-@Test func leafRowHasNoOnZoneAndSplitsAtHalf() {
-	let h: CGFloat = 28
-	#expect(resolveDropPosition(localY: 0,         rowHeight: h, hasChildren: false) == .before)
-	#expect(resolveDropPosition(localY: h * 0.49,  rowHeight: h, hasChildren: false) == .before)
-	#expect(resolveDropPosition(localY: h * 0.51,  rowHeight: h, hasChildren: false) == .after)
-	#expect(resolveDropPosition(localY: h,         rowHeight: h, hasChildren: false) == .after)
+@Test func leafZonesSplitAtHalf() {
+	let f = dropZoneFractions(isBranch: false)
+	#expect(f.before == 0.5)
+	#expect(f.on == nil, "leaf row has no .on zone — nothing to drop into")
+	#expect(f.after == 0.5)
+	#expect(f.before + f.after == 1.0)
 }
 
-@Test func dropPositionClampsLocalYToRowBounds() {
-	let h: CGFloat = 28
-	// Negative or out-of-bounds localY values should clamp into the
-	// nearest zone rather than crash or read uninitialized.
-	#expect(resolveDropPosition(localY: -10,       rowHeight: h, hasChildren: true)  == .before)
-	#expect(resolveDropPosition(localY: h + 100,   rowHeight: h, hasChildren: true)  == .after)
-	#expect(resolveDropPosition(localY: -10,       rowHeight: h, hasChildren: false) == .before)
-	#expect(resolveDropPosition(localY: h + 100,   rowHeight: h, hasChildren: false) == .after)
-}
-
-@Test func zeroOrNegativeRowHeightDegradesGracefully() {
-	#expect(resolveDropPosition(localY: 10, rowHeight: 0,  hasChildren: true)  == .on)
-	#expect(resolveDropPosition(localY: 10, rowHeight: -5, hasChildren: false) == .on)
+@Test func dropHighlightIsHashableValueType() {
+	let a = DropHighlight(rowID: 1, position: DropPosition.on)
+	let b = DropHighlight(rowID: 1, position: DropPosition.on)
+	let c = DropHighlight(rowID: 1, position: DropPosition.before)
+	#expect(a == b)
+	#expect(a != c)
+	#expect(Set([a, b, c]).count == 2)
 }
 
 // MARK: - DnD-enabled OutlineView builds

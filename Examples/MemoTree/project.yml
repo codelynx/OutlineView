@@ -1,4 +1,4 @@
-name: FileBrowser
+name: MemoTree
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
@@ -11,16 +11,16 @@ packages:
     path: ../..
 
 targets:
-  FileBrowser:
+  MemoTree:
     type: application
     supportedDestinations: [macOS, iOS]
     sources:
-      - path: FileBrowser
+      - path: MemoTree
     dependencies:
       - package: OutlineView
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.FileBrowser
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.MemoTree
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
