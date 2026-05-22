@@ -30,6 +30,7 @@ where Data: RandomAccessCollection,
 	@Binding private var expanded: Set<ID>
 	private let onMove: ((OutlineMove<ID>) -> Bool)?
 	private let acceptsRootDrop: Bool
+	private let rowDropZoneTrailingInset: CGFloat
 	private let rowContent: (Data.Element) -> RowContent
 	private let contextMenuContent: ((Data.Element) -> ContextMenuContent)?
 
@@ -54,6 +55,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onDrop: ((OutlineDrop<ID>) -> Bool)? = nil,
+		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -67,6 +69,7 @@ where Data: RandomAccessCollection,
 			}
 		}
 		self.acceptsRootDrop = false
+		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -82,6 +85,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
+		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -90,6 +94,7 @@ where Data: RandomAccessCollection,
 		self._expanded = expanded
 		self.onMove = onMove
 		self.acceptsRootDrop = true
+		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -106,6 +111,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
+		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
 		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
 	) {
@@ -115,6 +121,7 @@ where Data: RandomAccessCollection,
 		self._expanded = expanded
 		self.onMove = onMove
 		self.acceptsRootDrop = true
+		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
 		self.contextMenuContent = contextMenu
 	}
@@ -250,6 +257,10 @@ where Data: RandomAccessCollection,
 				}
 				dropZone(.after, fraction: fractions.after, sourceItem: row.element)
 			}
+			.frame(maxWidth: .infinity)
+			Color.clear
+				.frame(width: rowDropZoneTrailingInset)
+				.allowsHitTesting(false)
 		}
 	}
 

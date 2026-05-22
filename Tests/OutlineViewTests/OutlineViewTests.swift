@@ -201,7 +201,8 @@ private let sampleTree: [Node] = [
 			_ = move.sourceID
 			_ = move.destination
 			return true
-		}
+		},
+		rowDropZoneTrailingInset: 96
 	) { node in
 		Text(node.title)
 	} contextMenu: { node in

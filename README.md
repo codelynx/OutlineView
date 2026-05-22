@@ -133,6 +133,8 @@ Implemented:
 - Non-Codable row IDs
 - Caller-supplied row context menus that remain reachable when drop zones are
   enabled
+- Caller-reserved trailing row control strips so drop zones do not intercept
+  inline buttons
 
 Not yet implemented:
 
