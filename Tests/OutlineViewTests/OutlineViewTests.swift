@@ -191,6 +191,24 @@ private let sampleTree: [Node] = [
 	}
 }
 
+@Test @MainActor func buildsWithOnMoveAndContextMenu() async throws {
+	_ = OutlineView(
+		sampleTree,
+		children: \.children,
+		selection: .constant([]),
+		expanded: .constant([]),
+		onMove: { move in
+			_ = move.sourceID
+			_ = move.destination
+			return true
+		}
+	) { node in
+		Text(node.title)
+	} contextMenu: { node in
+		Button("Rename \(node.title)") {}
+	}
+}
+
 @Test func outlineMoveSupportsRootDestination() {
 	let move = OutlineMove(sourceID: 1, destination: OutlineMoveDestination<Int>.root)
 

@@ -16,12 +16,13 @@ import UniformTypeIdentifiers
 /// `children == nil` is a leaf, while `children != nil` is a branch, including
 /// an empty branch with `[]`. That lets an empty folder or group remain a valid
 /// "drop inside" destination.
-public struct OutlineView<Data, ID, RowContent>: View
+public struct OutlineView<Data, ID, RowContent, ContextMenuContent>: View
 where Data: RandomAccessCollection,
 	  Data.Element: Identifiable,
 	  ID == Data.Element.ID,
 	  ID: Hashable & Sendable,
-	  RowContent: View
+	  RowContent: View,
+	  ContextMenuContent: View
 {
 	private let data: Data
 	private let children: KeyPath<Data.Element, Data?>
@@ -30,6 +31,7 @@ where Data: RandomAccessCollection,
 	private let onMove: ((OutlineMove<ID>) -> Bool)?
 	private let acceptsRootDrop: Bool
 	private let rowContent: (Data.Element) -> RowContent
+	private let contextMenuContent: ((Data.Element) -> ContextMenuContent)?
 
 	@State private var targetedZone: DropHighlight<ID>? = nil
 	@State private var rootDropTargeted = false
@@ -53,7 +55,7 @@ where Data: RandomAccessCollection,
 		expanded: Binding<Set<ID>>,
 		onDrop: ((OutlineDrop<ID>) -> Bool)? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
-	) {
+	) where ContextMenuContent == EmptyView {
 		self.data = data
 		self.children = children
 		self._selection = selection
@@ -66,6 +68,7 @@ where Data: RandomAccessCollection,
 		}
 		self.acceptsRootDrop = false
 		self.rowContent = rowContent
+		self.contextMenuContent = nil
 	}
 
 	/// Creates an outline with the preferred generic move callback.
@@ -80,6 +83,31 @@ where Data: RandomAccessCollection,
 		expanded: Binding<Set<ID>>,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
+	) where ContextMenuContent == EmptyView {
+		self.data = data
+		self.children = children
+		self._selection = selection
+		self._expanded = expanded
+		self.onMove = onMove
+		self.acceptsRootDrop = true
+		self.rowContent = rowContent
+		self.contextMenuContent = nil
+	}
+
+	/// Creates an outline with row-relative move handling and caller-supplied
+	/// row context menus.
+	///
+	/// Context menus are attached to the final row surface after the drag/drop
+	/// overlay. This keeps secondary-click and long-press menus reachable even
+	/// when drop zones own row hit testing.
+	public init(
+		_ data: Data,
+		children: KeyPath<Data.Element, Data?>,
+		selection: Binding<Set<ID>>,
+		expanded: Binding<Set<ID>>,
+		onMove: @escaping (OutlineMove<ID>) -> Bool,
+		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
+		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
 	) {
 		self.data = data
 		self.children = children
@@ -88,6 +116,7 @@ where Data: RandomAccessCollection,
 		self.onMove = onMove
 		self.acceptsRootDrop = true
 		self.rowContent = rowContent
+		self.contextMenuContent = contextMenu
 	}
 
 	public var body: some View {
@@ -138,6 +167,17 @@ where Data: RandomAccessCollection,
 			selection = [id]
 		}
 
+		if let contextMenuContent {
+			rowSurface(base, for: row).contextMenu {
+				contextMenuContent(row.element)
+			}
+		} else {
+			rowSurface(base, for: row)
+		}
+	}
+
+	@ViewBuilder
+	private func rowSurface<Content: View>(_ base: Content, for row: FlatRow<Data.Element>) -> some View {
 		if onMove != nil {
 			base.overlay {
 				dropZoneOverlay(for: row)

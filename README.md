@@ -131,6 +131,8 @@ Implemented:
 - Row-relative drag destinations
 - Root drop destination through `onMove`
 - Non-Codable row IDs
+- Caller-supplied row context menus that remain reachable when drop zones are
+  enabled
 
 Not yet implemented:
 
