@@ -252,6 +252,9 @@ where Data: RandomAccessCollection,
 				rowHeight: Self.rowHeight,
 				dragSourcesByToken: $dragSourcesByToken,
 				onMove: onMove,
+				onSelect: {
+					selection = [sourceItem.id]
+				},
 				onTargeted: { targeted in
 					let entry = DropHighlight(rowID: sourceItem.id, position: position)
 					if targeted {
@@ -497,6 +500,7 @@ where ID: Hashable & Sendable,
 	let rowHeight: CGFloat
 	@Binding var dragSourcesByToken: [UUID: ID]
 	let onMove: (OutlineMove<ID>) -> Bool
+	let onSelect: () -> Void
 	let onTargeted: (Bool) -> Void
 	let preview: () -> Preview
 
@@ -527,6 +531,9 @@ where ID: Hashable & Sendable,
 			// (the bug that broke macOS drag after the slice-3b refactor).
 			.draggable(token) {
 				preview()
+			}
+			.onTapGesture {
+				onSelect()
 			}
 			.dropDestination(for: OutlineDragToken.self) { items, _ in
 				guard let token = items.first,
