@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 /// A SwiftUI outline view for hierarchical data on macOS and iOS.
 ///
@@ -29,6 +32,7 @@ where Data: RandomAccessCollection,
 	@Binding private var selection: Set<ID>
 	@Binding private var expanded: Set<ID>
 	private let onMove: ((OutlineMove<ID>) -> Bool)?
+	private let onActivate: ((ID) -> Void)?
 	private let acceptsRootDrop: Bool
 	private let rowDropZoneTrailingInset: CGFloat
 	private let rowContent: (Data.Element) -> RowContent
@@ -55,6 +59,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onDrop: ((OutlineDrop<ID>) -> Bool)? = nil,
+		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
@@ -68,6 +73,7 @@ where Data: RandomAccessCollection,
 				return legacyOnDrop(drop)
 			}
 		}
+		self.onActivate = onActivate
 		self.acceptsRootDrop = false
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
@@ -85,6 +91,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
+		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
@@ -93,6 +100,7 @@ where Data: RandomAccessCollection,
 		self._selection = selection
 		self._expanded = expanded
 		self.onMove = onMove
+		self.onActivate = onActivate
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
@@ -111,6 +119,7 @@ where Data: RandomAccessCollection,
 		selection: Binding<Set<ID>>,
 		expanded: Binding<Set<ID>>,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
+		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
 		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
@@ -120,6 +129,7 @@ where Data: RandomAccessCollection,
 		self._selection = selection
 		self._expanded = expanded
 		self.onMove = onMove
+		self.onActivate = onActivate
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowContent = rowContent
@@ -170,8 +180,11 @@ where Data: RandomAccessCollection,
 				.opacity(afterTargeted ? 1 : 0)
 		}
 		.contentShape(Rectangle())
+		.onTapGesture(count: 2) {
+			onActivate?(id)
+		}
 		.onTapGesture {
-			selection = [id]
+			handleSelect(id: id)
 		}
 
 		if let contextMenuContent {
@@ -258,6 +271,16 @@ where Data: RandomAccessCollection,
 				dropZone(.after, fraction: fractions.after, sourceItem: row.element)
 			}
 			.frame(maxWidth: .infinity)
+			// Double-tap activation lives on the OUTER overlay (here), not
+			// on individual `RowDropZone` strips. A double-tap whose two
+			// taps land in different strips (e.g., one in `.before` and
+			// one in `.after`) would not register as count:2 on either
+			// strip, but the outer gesture sees both taps as one
+			// sequence. The inner strips keep `.onTapGesture { onSelect() }`
+			// for single-tap selection.
+			.onTapGesture(count: 2) {
+				onActivate?(row.element.id)
+			}
 			Color.clear
 				.frame(width: rowDropZoneTrailingInset)
 				.allowsHitTesting(false)
@@ -304,7 +327,7 @@ where Data: RandomAccessCollection,
 				dragSourcesByToken: $dragSourcesByToken,
 				onMove: onMove,
 				onSelect: {
-					selection = [sourceItem.id]
+					handleSelect(id: sourceItem.id)
 				},
 				onTargeted: { targeted in
 					let entry = DropHighlight(rowID: sourceItem.id, position: position)
@@ -319,6 +342,42 @@ where Data: RandomAccessCollection,
 				}
 			)
 		}
+	}
+
+	/// Single-tap selection mutator with Mac modifier-aware behavior.
+	///
+	/// - Plain tap → replace selection with this row.
+	/// - Shift-tap (macOS) → add this row to existing selection.
+	/// - Cmd-tap (macOS) → toggle this row in selection.
+	///
+	/// iOS / iPadOS taps always replace (hardware-keyboard modifier story
+	/// for non-Mac platforms is not in scope for this layer; callers should
+	/// implement long-press-then-tap-add for iPad multi-select using the
+	/// `onActivate` or their own row-content gestures if needed).
+	///
+	/// Uses `NSEvent.modifierFlags` (the live global modifier state) rather
+	/// than `NSApp.currentEvent?.modifierFlags`. SwiftUI gesture callbacks
+	/// can fire outside the normal event-dispatch path where `currentEvent`
+	/// is nil; falling back to replace-selection in that case would silently
+	/// reproduce the bug this method is meant to fix. The live class-method
+	/// modifier flags don't depend on `currentEvent`.
+	private func handleSelect(id: ID) {
+		#if os(macOS)
+		let modifiers = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+		if modifiers.contains(.shift) {
+			selection.insert(id)
+			return
+		}
+		if modifiers.contains(.command) {
+			if selection.contains(id) {
+				selection.remove(id)
+			} else {
+				selection.insert(id)
+			}
+			return
+		}
+		#endif
+		selection = [id]
 	}
 
 	/// Small preview shown under the cursor / finger while a row is being
