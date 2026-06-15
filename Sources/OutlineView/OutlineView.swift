@@ -37,12 +37,16 @@ where Data: RandomAccessCollection,
 	private let rowDropZoneTrailingInset: CGFloat
 	private let rowContent: (Data.Element) -> RowContent
 	private let contextMenuContent: ((Data.Element) -> ContextMenuContent)?
+	/// Per-row height. Client-configurable (init param, defaults to 28) so the
+	/// consumer owns the platform choice — e.g. a taller value on iOS to clear
+	/// the 44 pt touch-target guideline, compact on macOS where the pointer is
+	/// precise. The package stays layout-policy-neutral.
+	private let rowHeight: CGFloat
 
 	@State private var targetedZone: DropHighlight<ID>? = nil
 	@State private var rootDropTargeted = false
 	@State private var dragSourcesByToken: [UUID: ID] = [:]
 
-	static var rowHeight: CGFloat { 28 }
 	static var indentPerDepth: CGFloat { 16 }
 	static var insertionLineHeight: CGFloat { 2 }
 	static var insertionDotDiameter: CGFloat { 6 }
@@ -61,6 +65,7 @@ where Data: RandomAccessCollection,
 		onDrop: ((OutlineDrop<ID>) -> Bool)? = nil,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
+		rowHeight: CGFloat = 28,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -76,6 +81,7 @@ where Data: RandomAccessCollection,
 		self.onActivate = onActivate
 		self.acceptsRootDrop = false
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
+		self.rowHeight = rowHeight
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -93,6 +99,7 @@ where Data: RandomAccessCollection,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
+		rowHeight: CGFloat = 28,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -103,6 +110,7 @@ where Data: RandomAccessCollection,
 		self.onActivate = onActivate
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
+		self.rowHeight = rowHeight
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -121,6 +129,7 @@ where Data: RandomAccessCollection,
 		onMove: @escaping (OutlineMove<ID>) -> Bool,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
+		rowHeight: CGFloat = 28,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
 		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
 	) {
@@ -132,6 +141,7 @@ where Data: RandomAccessCollection,
 		self.onActivate = onActivate
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
+		self.rowHeight = rowHeight
 		self.rowContent = rowContent
 		self.contextMenuContent = contextMenu
 	}
@@ -167,7 +177,7 @@ where Data: RandomAccessCollection,
 			Spacer(minLength: 0)
 		}
 		.padding(.horizontal, Self.rowOuterPadding)
-		.frame(height: Self.rowHeight)
+		.frame(height: rowHeight)
 		.background(rowBackground(isSelected: isSelected, onTargeted: onTargeted))
 		.overlay(alignment: .topLeading) {
 			insertionLine(at: row.depth)
@@ -295,7 +305,7 @@ where Data: RandomAccessCollection,
 				isTargeted: $rootDropTargeted,
 				onMove: onMove
 			)
-			.frame(height: flatRows.isEmpty ? Self.rowHeight * 4 : Self.rowHeight)
+			.frame(height: flatRows.isEmpty ? rowHeight * 4 : rowHeight)
 			.frame(maxWidth: .infinity)
 			.background(rootDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear)
 			.overlay(alignment: .topLeading) {
@@ -323,7 +333,7 @@ where Data: RandomAccessCollection,
 				targetID: sourceItem.id,
 				position: position,
 				fraction: fraction,
-				rowHeight: Self.rowHeight,
+				rowHeight: rowHeight,
 				dragSourcesByToken: $dragSourcesByToken,
 				onMove: onMove,
 				onSelect: {
