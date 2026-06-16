@@ -42,6 +42,11 @@ where Data: RandomAccessCollection,
 	/// the 44 pt touch-target guideline, compact on macOS where the pointer is
 	/// precise. The package stays layout-policy-neutral.
 	private let rowHeight: CGFloat
+	/// Programmatic scroll-to-row request. `nil` (the default) means no reveal.
+	/// The package defers the scroll until the target row is materialized in the
+	/// flattened list — so a consumer can expand ancestors and issue the request
+	/// in the same update and still have it land. See `OutlineRevealRequest`.
+	private let revealRequest: OutlineRevealRequest<ID>?
 
 	@State private var targetedZone: DropHighlight<ID>? = nil
 	@State private var rootDropTargeted = false
@@ -66,6 +71,7 @@ where Data: RandomAccessCollection,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
+		reveal: OutlineRevealRequest<ID>? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -82,6 +88,7 @@ where Data: RandomAccessCollection,
 		self.acceptsRootDrop = false
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
+		self.revealRequest = reveal
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -100,6 +107,7 @@ where Data: RandomAccessCollection,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
+		reveal: OutlineRevealRequest<ID>? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -111,6 +119,7 @@ where Data: RandomAccessCollection,
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
+		self.revealRequest = reveal
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -130,6 +139,7 @@ where Data: RandomAccessCollection,
 		onActivate: ((ID) -> Void)? = nil,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
+		reveal: OutlineRevealRequest<ID>? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
 		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
 	) {
@@ -142,19 +152,45 @@ where Data: RandomAccessCollection,
 		self.acceptsRootDrop = true
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
+		self.revealRequest = reveal
 		self.rowContent = rowContent
 		self.contextMenuContent = contextMenu
 	}
 
 	public var body: some View {
-		ScrollView {
-			LazyVStack(alignment: .leading, spacing: 0) {
-				ForEach(flatRows, id: \.element.id) { row in
-					rowView(for: row)
+		ScrollViewReader { proxy in
+			ScrollView {
+				LazyVStack(alignment: .leading, spacing: 0) {
+					ForEach(flatRows, id: \.element.id) { row in
+						rowView(for: row)
+					}
+					rootDropZone
 				}
-				rootDropZone
+				.frame(maxWidth: .infinity, alignment: .leading)
 			}
-			.frame(maxWidth: .infinity, alignment: .leading)
+			.task(id: revealRequest) {
+				await revealIfNeeded(using: proxy)
+			}
+		}
+	}
+
+	/// Scroll the requested row into view, deferring until it's materialized in
+	/// the flattened list. The consumer expands ancestors before/with issuing the
+	/// request, but the expansion + request can land in the same update, and a
+	/// lazily-realized off-screen row needs a layout pass before `scrollTo` lands.
+	/// Hop a bounded number of frames, scrolling the moment the target row is
+	/// present; give up silently if it never appears (e.g. the row was deleted).
+	private func revealIfNeeded(using proxy: ScrollViewProxy) async {
+		guard let request = revealRequest else { return }
+		for _ in 0..<10 {
+			// One frame hop first: lets a same-update ancestor expansion flatten
+			// the target row in and lets the lazy row lay out before scrolling.
+			try? await Task.sleep(nanoseconds: 16_000_000)
+			if Task.isCancelled { return }
+			if flatRows.contains(where: { $0.element.id == request.id }) {
+				proxy.scrollTo(request.id, anchor: .center)
+				return
+			}
 		}
 	}
 
@@ -428,6 +464,26 @@ where Data: RandomAccessCollection,
 		} else {
 			Color.clear
 		}
+	}
+}
+
+// MARK: - Public reveal type
+
+/// A request to scroll a specific row into view.
+///
+/// `nonce` lets the same `id` be revealed repeatedly: re-issuing a reveal for an
+/// already-revealed row still triggers because the value differs. `Equatable` so
+/// `OutlineView` can drive its deferred scroll off `.task(id:)`. The consumer
+/// owns expansion — expand the target's ancestors before (or in the same update
+/// as) issuing the request; the view defers the scroll until the row is
+/// materialized in the flattened list.
+public struct OutlineRevealRequest<ID: Hashable & Sendable>: Equatable, Sendable {
+	public let id: ID
+	public let nonce: Int
+
+	public init(id: ID, nonce: Int) {
+		self.id = id
+		self.nonce = nonce
 	}
 }
 
