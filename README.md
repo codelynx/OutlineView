@@ -47,6 +47,24 @@ struct Sidebar: View {
 
 `selection` and `expanded` are caller-owned bindings. The current implementation supports single-click replacement selection. Multi-selection gestures and keyboard navigation are future work.
 
+## Row Tinting
+
+Pass an optional `rowTint` closure to tint individual rows. It is drawn as the full-width row band (spanning the indent and chevron columns plus the outer padding) *underneath* the selection / drop-target highlight, so a tinted row still reads as selected. Return `nil` for a row to leave it untinted.
+
+```swift
+OutlineView(
+	nodes,
+	children: \.children,
+	selection: $selection,
+	expanded: $expanded,
+	rowTint: { node in node.isPinned ? .yellow.opacity(0.18) : nil }
+) { node in
+	Label(node.name, systemImage: node.icon)
+}
+```
+
+`rowTint` is available on all three initializers and defaults to `nil` (no tinting). Keep tints subtle (low opacity) so the translucent selection wash stays legible on top.
+
 ## Moves and Drops
 
 Use the `onMove` initializer for generic tree operations:
@@ -127,6 +145,7 @@ Implemented:
 
 - Generic tree rendering from caller-owned data
 - Caller-owned selection and expansion state
+- Per-row background tint under the selection/drop wash (`rowTint`)
 - Empty branch detection
 - Row-relative drag destinations
 - Root drop destination through `onMove`

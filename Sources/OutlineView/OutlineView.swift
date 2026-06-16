@@ -37,6 +37,11 @@ where Data: RandomAccessCollection,
 	private let rowDropZoneTrailingInset: CGFloat
 	private let rowContent: (Data.Element) -> RowContent
 	private let contextMenuContent: ((Data.Element) -> ContextMenuContent)?
+	/// Per-row background tint, drawn as the full-width row band (spans the indent +
+	/// chevron columns and the outer padding) *under* the selection / drop-target
+	/// wash so a tinted row still reads as selected. Returning `nil` for a row means
+	/// no tint (`Color.clear`). Defaults to `nil` (no tinting) on every initializer.
+	private let rowTint: ((Data.Element) -> Color?)?
 	/// Per-row height. Client-configurable (init param, defaults to 28) so the
 	/// consumer owns the platform choice — e.g. a taller value on iOS to clear
 	/// the 44 pt touch-target guideline, compact on macOS where the pointer is
@@ -72,6 +77,7 @@ where Data: RandomAccessCollection,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
 		reveal: OutlineRevealRequest<ID>? = nil,
+		rowTint: ((Data.Element) -> Color?)? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -89,6 +95,7 @@ where Data: RandomAccessCollection,
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
 		self.revealRequest = reveal
+		self.rowTint = rowTint
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -108,6 +115,7 @@ where Data: RandomAccessCollection,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
 		reveal: OutlineRevealRequest<ID>? = nil,
+		rowTint: ((Data.Element) -> Color?)? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent
 	) where ContextMenuContent == EmptyView {
 		self.data = data
@@ -120,6 +128,7 @@ where Data: RandomAccessCollection,
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
 		self.revealRequest = reveal
+		self.rowTint = rowTint
 		self.rowContent = rowContent
 		self.contextMenuContent = nil
 	}
@@ -140,6 +149,7 @@ where Data: RandomAccessCollection,
 		rowDropZoneTrailingInset: CGFloat = 0,
 		rowHeight: CGFloat = 28,
 		reveal: OutlineRevealRequest<ID>? = nil,
+		rowTint: ((Data.Element) -> Color?)? = nil,
 		@ViewBuilder rowContent: @escaping (Data.Element) -> RowContent,
 		@ViewBuilder contextMenu: @escaping (Data.Element) -> ContextMenuContent
 	) {
@@ -153,6 +163,7 @@ where Data: RandomAccessCollection,
 		self.rowDropZoneTrailingInset = rowDropZoneTrailingInset
 		self.rowHeight = rowHeight
 		self.revealRequest = reveal
+		self.rowTint = rowTint
 		self.rowContent = rowContent
 		self.contextMenuContent = contextMenu
 	}
@@ -214,7 +225,7 @@ where Data: RandomAccessCollection,
 		}
 		.padding(.horizontal, Self.rowOuterPadding)
 		.frame(height: rowHeight)
-		.background(rowBackground(isSelected: isSelected, onTargeted: onTargeted))
+		.background(rowBackground(tint: rowTint?(row.element), isSelected: isSelected, onTargeted: onTargeted))
 		.overlay(alignment: .topLeading) {
 			insertionLine(at: row.depth)
 				.offset(y: -Self.insertionDotDiameter / 2)
@@ -254,13 +265,14 @@ where Data: RandomAccessCollection,
 	}
 
 	@ViewBuilder
-	private func rowBackground(isSelected: Bool, onTargeted: Bool) -> some View {
-		if isSelected {
-			Color.accentColor.opacity(0.2)
-		} else if onTargeted {
-			Color.accentColor.opacity(0.25)
-		} else {
-			Color.clear
+	private func rowBackground(tint: Color?, isSelected: Bool, onTargeted: Bool) -> some View {
+		ZStack {
+			tint ?? Color.clear
+			if isSelected {
+				Color.accentColor.opacity(0.2)
+			} else if onTargeted {
+				Color.accentColor.opacity(0.25)
+			}
 		}
 	}
 
